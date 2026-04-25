@@ -1,0 +1,183 @@
+#define _XOPEN_SOURCE 700
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+
+
+double **allocateMatrix(int r, int c) {
+    double **M = malloc(r * sizeof(double *));
+    for (int i = 0; i < r; i++)
+        M[i] = malloc(c * sizeof(double));
+    return M;
+}
+
+
+void freeMatrix(double **M, int r) {
+    for (int i = 0; i < r; i++)
+        free(M[i]);
+    free(M);
+}
+
+
+void generateRandom(int r, int c, double **M) {
+    for (int i = 0; i < r; i++)
+        for (int j = 0; j < c; j++)
+            M[i][j] = rand() % 10 + 1;
+}
+
+
+double determinant(int n, double **A) {
+    double det = 1.0;
+    int swapCount = 0;
+
+    for (int i = 0; i < n; i++) {
+        if (A[i][i] == 0) {
+            for (int j = i + 1; j < n; j++) {
+                if (A[j][i] != 0) {
+                    for (int k = 0; k < n; k++) {
+                        double temp = A[i][k];
+                        A[i][k] = A[j][k];
+                        A[j][k] = temp;
+                    }
+                    swapCount++;
+                    break;
+                }
+            }
+        }
+
+        if (A[i][i] == 0)
+            return 0;
+
+        for (int j = i + 1; j < n; j++) {
+            double factor = A[j][i] / A[i][i];
+            for (int k = i; k < n; k++)
+                A[j][k] -= factor * A[i][k];
+        }
+    }
+
+    for (int i = 0; i < n; i++)
+        det *= A[i][i];
+
+    if (swapCount % 2 != 0)
+        det = -det;
+
+    return det;
+}
+
+double elapsed(struct timespec s, struct timespec e) {
+    return (e.tv_sec - s.tv_sec) +
+           (e.tv_nsec - s.tv_nsec) / 1e9;
+}
+
+int main() {
+    int m1, n1, m2, n2;
+    double maxTime = 0.0;
+
+    printf("Enter rows and columns of Matrix A: ");
+    scanf("%d %d", &m1, &n1);
+
+    printf("Enter rows and columns of Matrix B: ");
+    scanf("%d %d", &m2, &n2);
+
+    srand(time(NULL));
+
+    double **A = allocateMatrix(m1, n1);
+    double **B = allocateMatrix(m2, n2);
+
+    generateRandom(m1, n1, A);
+    generateRandom(m2, n2, B);
+
+    struct timespec s, e;
+
+    /* ADDITION */
+    if (m1 == m2 && n1 == n2) {
+        double **add = allocateMatrix(m1, n1);
+        clock_gettime(CLOCK_MONOTONIC, &s);
+
+        for (int i = 0; i < m1; i++)
+            for (int j = 0; j < n1; j++)
+                add[i][j] = A[i][j] + B[i][j];
+
+        clock_gettime(CLOCK_MONOTONIC, &e);
+        double t = elapsed(s, e);
+        maxTime = (t > maxTime) ? t : maxTime;
+        printf("\nAddition Time: %.9lf s", t);
+        freeMatrix(add, m1);
+    }
+
+    /* SUBTRACTION */
+    if (m1 == m2 && n1 == n2) {
+        double **sub = allocateMatrix(m1, n1);
+        clock_gettime(CLOCK_MONOTONIC, &s);
+
+        for (int i = 0; i < m1; i++)
+            for (int j = 0; j < n1; j++)
+                sub[i][j] = A[i][j] - B[i][j];
+
+        clock_gettime(CLOCK_MONOTONIC, &e);
+        double t = elapsed(s, e);
+        maxTime = (t > maxTime) ? t : maxTime;
+        printf("\nSubtraction Time: %.9lf s", t);
+        freeMatrix(sub, m1);
+    }
+
+    /* MULTIPLICATION */
+    if (n1 == m2) {
+        double **mul = allocateMatrix(m1, n2);
+        clock_gettime(CLOCK_MONOTONIC, &s);
+
+        for (int i = 0; i < m1; i++)
+            for (int j = 0; j < n2; j++) {
+                mul[i][j] = 0;
+                for (int k = 0; k < n1; k++)
+                    mul[i][j] += A[i][k] * B[k][j];
+            }
+
+        clock_gettime(CLOCK_MONOTONIC, &e);
+        double t = elapsed(s, e);
+        maxTime = (t > maxTime) ? t : maxTime;
+        printf("\nMultiplication Time: %.9lf s", t);
+        freeMatrix(mul, m1);
+    }
+
+    /* DETERMINANT A */
+    if (m1 == n1) {
+        double **copyA = allocateMatrix(m1, n1);
+        for (int i = 0; i < m1; i++)
+            for (int j = 0; j < n1; j++)
+                copyA[i][j] = A[i][j];
+
+        clock_gettime(CLOCK_MONOTONIC, &s);
+        determinant(m1, copyA);
+        clock_gettime(CLOCK_MONOTONIC, &e);
+
+        double t = elapsed(s, e);
+        maxTime = (t > maxTime) ? t : maxTime;
+        printf("\nDeterminant A Time: %.9lf s", t);
+        freeMatrix(copyA, m1);
+    }
+
+    /* DETERMINANT B */
+    if (m2 == n2) {
+        double **copyB = allocateMatrix(m2, n2);
+        for (int i = 0; i < m2; i++)
+            for (int j = 0; j < n2; j++)
+                copyB[i][j] = B[i][j];
+
+        clock_gettime(CLOCK_MONOTONIC, &s);
+        determinant(m2, copyB);
+        clock_gettime(CLOCK_MONOTONIC, &e);
+
+        double t = elapsed(s, e);
+        maxTime = (t > maxTime) ? t : maxTime;
+        printf("\nDeterminant B Time: %.9lf s", t);
+        freeMatrix(copyB, m2);
+    }
+
+    printf("\n\nMaximum Execution Time: %.9lf seconds\n", maxTime);
+
+    freeMatrix(A, m1);
+    freeMatrix(B, m2);
+
+    return 0;
+}
