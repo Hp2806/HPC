@@ -1,0 +1,203 @@
+#define _XOPEN_SOURCE 700
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <time.h>
+
+
+double **allocateMatrix(int r, int c) {
+    double **M = malloc(r * sizeof(double *));
+    for (int i = 0; i < r; i++)
+        M[i] = malloc(c * sizeof(double));
+    return M;
+}
+
+
+void freeMatrix(double **M, int r) {
+    for (int i = 0; i < r; i++)
+        free(M[i]);
+    free(M);
+}
+
+
+void generateRandom(int r, int c, double **M) {
+    for (int i = 0; i < r; i++)
+        for (int j = 0; j < c; j++)
+            M[i][j] = rand() % 10 + 1;
+}
+
+
+double determinant(int n, double **A) {
+    double det = 1.0;
+    int swapCount = 0;
+
+    for (int i = 0; i < n; i++) {
+        if (A[i][i] == 0) {
+            for (int j = i + 1; j < n; j++) {
+                if (A[j][i] != 0) {
+                    for (int k = 0; k < n; k++) {
+                        double temp = A[i][k];
+                        A[i][k] = A[j][k];
+                        A[j][k] = temp;
+                    }
+                    swapCount++;
+                    break;
+                }
+            }
+        }
+        if (A[i][i] == 0) return 0;
+
+        for (int j = i + 1; j < n; j++) {
+            double factor = A[j][i] / A[i][i];
+            for (int k = i; k < n; k++)
+                A[j][k] -= factor * A[i][k];
+        }
+    }
+
+    for (int i = 0; i < n; i++)
+        det *= A[i][i];
+
+    if (swapCount % 2 != 0)
+        det = -det;
+
+    return det;
+}
+
+int main() {
+    int m1, n1, m2, n2;
+
+    printf("Enter rows and columns of Matrix A: ");
+    scanf("%d %d", &m1, &n1);
+
+    printf("Enter rows and columns of Matrix B: ");
+    scanf("%d %d", &m2, &n2);
+
+    srand(time(NULL));
+
+    double **A = allocateMatrix(m1, n1);
+    double **B = allocateMatrix(m2, n2);
+
+    generateRandom(m1, n1, A);
+    generateRandom(m2, n2, B);
+
+    int shmid = shmget(IPC_PRIVATE, 4 * sizeof(double), IPC_CREAT | 0666);
+    double *times = (double *)shmat(shmid, NULL, 0);
+
+    pid_t p;
+
+    /* ---------- ADDITION ---------- */
+    if ((p = fork()) == 0) {
+        struct timespec s, e;
+        clock_gettime(CLOCK_MONOTONIC, &s);
+
+        if (m1 == m2 && n1 == n2) {
+            double **add = allocateMatrix(m1, n1);
+            for (int i = 0; i < m1; i++)
+                for (int j = 0; j < n1; j++)
+                    add[i][j] = A[i][j] + B[i][j];
+            freeMatrix(add, m1);
+        }
+
+        clock_gettime(CLOCK_MONOTONIC, &e);
+        times[0] = (e.tv_sec - s.tv_sec) +
+                   (e.tv_nsec - s.tv_nsec) / 1e9;
+        exit(0);
+    }
+
+    /* ---------- SUBTRACTION ---------- */
+    if ((p = fork()) == 0) {
+        struct timespec s, e;
+        clock_gettime(CLOCK_MONOTONIC, &s);
+
+        if (m1 == m2 && n1 == n2) {
+            double **sub = allocateMatrix(m1, n1);
+            for (int i = 0; i < m1; i++)
+                for (int j = 0; j < n1; j++)
+                    sub[i][j] = A[i][j] - B[i][j];
+            freeMatrix(sub, m1);
+        }
+
+        clock_gettime(CLOCK_MONOTONIC, &e);
+        times[1] = (e.tv_sec - s.tv_sec) +
+                   (e.tv_nsec - s.tv_nsec) / 1e9;
+        exit(0);
+    }
+
+    /* ---------- MULTIPLICATION ---------- */
+    if ((p = fork()) == 0) {
+        struct timespec s, e;
+        clock_gettime(CLOCK_MONOTONIC, &s);
+
+        if (n1 == m2) {
+            double **mul = allocateMatrix(m1, n2);
+            for (int i = 0; i < m1; i++)
+                for (int j = 0; j < n2; j++) {
+                    mul[i][j] = 0;
+                    for (int k = 0; k < n1; k++)
+                        mul[i][j] += A[i][k] * B[k][j];
+                }
+            freeMatrix(mul, m1);
+        }
+
+        clock_gettime(CLOCK_MONOTONIC, &e);
+        times[2] = (e.tv_sec - s.tv_sec) +
+                   (e.tv_nsec - s.tv_nsec) / 1e9;
+        exit(0);
+    }
+
+    /* ---------- DETERMINANT ---------- */
+    if ((p = fork()) == 0) {
+        struct timespec s, e;
+        clock_gettime(CLOCK_MONOTONIC, &s);
+
+        if (m1 == n1) {
+            double **copyA = allocateMatrix(m1, n1);
+            for (int i = 0; i < m1; i++)
+                for (int j = 0; j < n1; j++)
+                    copyA[i][j] = A[i][j];
+            determinant(m1, copyA);
+            freeMatrix(copyA, m1);
+        }
+
+        if (m2 == n2) {
+            double **copyB = allocateMatrix(m2, n2);
+            for (int i = 0; i < m2; i++)
+                for (int j = 0; j < n2; j++)
+                    copyB[i][j] = B[i][j];
+            determinant(m2, copyB);
+            freeMatrix(copyB, m2);
+        }
+
+        clock_gettime(CLOCK_MONOTONIC, &e);
+        times[3] = (e.tv_sec - s.tv_sec) +
+                   (e.tv_nsec - s.tv_nsec) / 1e9;
+        exit(0);
+    }
+
+    for (int i = 0; i < 4; i++)
+        wait(NULL);
+
+    double max = times[0];
+    for (int i = 1; i < 4; i++)
+        if (times[i] > max) max = times[i];
+
+    printf("\nParallel Execution Times:\n");
+    printf("Addition       : %.9lf s\n", times[0]);
+    printf("Subtraction    : %.9lf s\n", times[1]);
+    printf("Multiplication : %.9lf s\n", times[2]);
+    printf("Determinant    : %.9lf s\n", times[3]);
+
+    printf("\nMaximum Parallel Time: %.9lf s\n", max);
+
+    shmdt(times);
+    shmctl(shmid, IPC_RMID, NULL);
+
+    freeMatrix(A, m1);
+    freeMatrix(B, m2);
+
+    return 0;
+}
+
