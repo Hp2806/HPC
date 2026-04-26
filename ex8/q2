@@ -1,0 +1,24 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <omp.h>
+
+int main() {
+    int n = 1000000;
+    int *A;
+    int constant = 5;
+    A = (int*) malloc(n * sizeof(int));
+    for(int i = 0; i < n; i++) {
+        A[i] = i;
+    }
+    #pragma omp parallel for
+    for(int i = 0; i < n; i++) {
+        A[i] = A[i] + constant;
+    }
+    printf("Sample Output:\n");
+    for(int i = 0; i < 5; i++) {
+        printf("%d\n", A[i]);
+    }
+    free(A);
+
+    return 0;
+}
