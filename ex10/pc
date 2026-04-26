@@ -1,0 +1,126 @@
+#define _DEFAULT_SOURCE
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <omp.h>
+#include <unistd.h>
+#define MAX_QUEUE 200
+#define MAX_LINE 256
+char queue[MAX_QUEUE][MAX_LINE];
+int front = 0;
+int rear = 0;
+omp_lock_t queue_lock;
+int done_producers = 0;
+int total_producers = 0;
+int total_produced_lines = 0;
+void enqueue(char *line) {
+    int added = 0;
+    while (!added) {
+        omp_set_lock(&queue_lock);
+        if ((rear + 1) % MAX_QUEUE != front) {
+            strncpy(queue[rear], line, MAX_LINE);
+            rear = (rear + 1) % MAX_QUEUE;
+            added = 1;
+        }
+        omp_unset_lock(&queue_lock);
+        if (!added) {
+            usleep(100);
+        }
+    }
+}
+int dequeue(char *line) {
+    int success = 0;
+    omp_set_lock(&queue_lock);
+    if (front != rear) {
+        strncpy(line, queue[front], MAX_LINE);
+        front = (front + 1) % MAX_QUEUE;
+        success = 1;
+    }
+    omp_unset_lock(&queue_lock);
+    return success;
+}
+void producer(int id, char *filename) {
+    FILE *fp = fopen(filename, "r");
+    char line[MAX_LINE];
+    int lines_in_this_file = 0;
+    if (!fp) {
+        printf("Producer %d: Could not open %s\n", id, filename);
+        #pragma omp atomic
+        done_producers++;
+        return;
+    }
+    while (fgets(line, MAX_LINE, fp)) {
+        line[strcspn(line, "\n")] = 0;
+        if (strlen(line) == 0) continue;
+        enqueue(line);
+        lines_in_this_file++;
+        #pragma omp atomic
+        total_produced_lines++;
+        printf("Producer %d (File: %s) read line %d: %s\n", id, filename, lines_in_this_file, line);
+    }
+    fclose(fp);
+    printf("Producer %d: Finished processing %s (%d lines total).\n", id, filename, lines_in_this_file);
+    #pragma omp atomic
+    done_producers++;
+}
+void consumer(int id) {
+    char line[MAX_LINE];
+    char *saveptr;
+    while (1) {
+        if (dequeue(line)) {
+            char *token = strtok_r(line, " \t\r\n", &saveptr);
+            while (token != NULL) {
+                #pragma omp critical
+                {
+                    printf("Consumer %d processed token: %s\n", id, token);
+                }
+                token = strtok_r(NULL, " \t\r\n", &saveptr);
+            }
+        } else {
+            int finished_count;
+            #pragma omp atomic read
+            finished_count = done_producers;
+            if (finished_count == total_producers) {
+                omp_set_lock(&queue_lock);
+                int empty = (front == rear);
+                omp_unset_lock(&queue_lock);
+
+                if (empty) break;
+            }
+            usleep(1000);
+        }
+    }
+}
+
+int main(int argc, char *argv[]) {
+    if (argc < 2) {
+        printf("Usage: %s <file1> <file2> ...\n", argv[0]);
+        return 1;
+    }
+
+    total_producers = argc - 1;
+
+    int num_threads = total_producers + 2;
+
+    omp_init_lock(&queue_lock);
+
+    #pragma omp parallel num_threads(num_threads)
+    {
+        int id = omp_get_thread_num();
+
+        if (id < total_producers) {
+            producer(id, argv[id + 1]);
+        } else {
+            consumer(id);
+        }
+    }
+
+    omp_destroy_lock(&queue_lock);
+
+    printf("\n--- Summary ---\n");
+    printf("Total files processed: %d\n", total_producers);
+    printf("Total lines processed: %d\n", total_produced_lines);
+    printf("All consumers have finished.\n");
+
+    return 0;
+}
