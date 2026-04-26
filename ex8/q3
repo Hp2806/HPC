@@ -1,0 +1,40 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <omp.h>
+
+#define ROWS 3
+#define COLS 3
+
+void printMatrix(int mat[ROWS][COLS]) {
+    for (int i = 0; i < ROWS; i++) {
+        for (int j = 0; j < COLS; j++) {
+            printf("%2d ", mat[i][j]);
+        }
+        printf("\n");
+    }
+    printf("\n");
+}
+int main() {
+    int matrix[ROWS][COLS];
+    int count = 1;
+    for (int i = 0; i < ROWS; i++) {
+        for (int j = 0; j < COLS; j++) {
+            matrix[i][j] = count++;
+        }
+    }
+    printf("Original Matrix:\n");
+    printMatrix(matrix);
+    #pragma omp parallel for
+    for (int i = 0; i < ROWS; i++) {
+        for (int j = 0; j < COLS / 2; j++) {
+            int temp = matrix[i][j];
+            matrix[i][j] = matrix[i][COLS - 1 - j];
+            matrix[i][COLS - 1 - j] = temp;
+        }
+    }
+
+    printf("Mirrored Matrix:\n");
+    printMatrix(matrix);
+
+    return 0;
+}
