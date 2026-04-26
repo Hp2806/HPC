@@ -1,0 +1,87 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/shm.h>
+#include <semaphore.h>
+#include <fcntl.h>
+#include <pthread.h>
+#include <time.h>
+#define BUFFER_SIZE 5
+#define MAX_TASKS 20
+#define SEM_EMPTY "/empty_23bcs070"
+#define SEM_FULL  "/full_23bcs070"
+#define SEM_MUTEX "/mutex_23bcs070"
+#define SHM_KEY   23070
+
+typedef struct {
+    int num1;
+    int num2;
+    char op;
+} task;
+
+task *buffer;
+sem_t *empty, *full, *mutex;
+int in = 0;
+
+void* producer(void *arg) {
+    int thread_no = *(int*)arg;
+    char ops[] = {'+', '-', '*', '/'};
+    srand(time(NULL));
+
+    for(int i = 0; i < MAX_TASKS; i++) {
+        task newtask;
+        newtask.num1 = rand() % 100;
+        newtask.num2 = rand() % 50 + 1;
+        newtask.op = ops[rand() % 4];
+
+        sem_wait(empty);
+        sem_wait(mutex);
+
+        buffer[in] = newtask;
+        printf("Thread %d produced: %d %c %d\n", thread_no, newtask.num1, newtask.op, newtask.num2);
+        in = (in + 1) % BUFFER_SIZE;
+
+        sem_post(mutex);
+        sem_post(full);
+        sleep(1);
+    }
+
+    for(int i = 0; i < 4; i++) {
+        sem_wait(empty);
+        sem_wait(mutex);
+        buffer[in].op = 'X';
+        in = (in + 1) % BUFFER_SIZE;
+        sem_post(mutex);
+        sem_post(full);
+    }
+
+    printf("Producer finished\n");
+    pthread_exit(NULL);
+}
+
+int main() {
+    int shmid = shmget(SHM_KEY, BUFFER_SIZE * sizeof(task), 0666 | IPC_CREAT);
+    if (shmid == -1) { perror("shmget failed"); exit(1); }
+
+    buffer = (task*) shmat(shmid, NULL, 0);
+    sem_unlink(SEM_EMPTY);
+    sem_unlink(SEM_FULL);
+    sem_unlink(SEM_MUTEX);
+
+    empty = sem_open(SEM_EMPTY, O_CREAT, 0666, BUFFER_SIZE);
+    full  = sem_open(SEM_FULL,  O_CREAT, 0666, 0);
+    mutex = sem_open(SEM_MUTEX, O_CREAT, 0666, 1);
+
+    if (empty == SEM_FAILED || full == SEM_FAILED || mutex == SEM_FAILED) {
+        perror("sem_open failed");
+        exit(1);
+    }
+
+    pthread_t prod_thread;
+    int t_id = 1;
+    pthread_create(&prod_thread, NULL, producer, &t_id);
+    pthread_join(prod_thread, NULL);
+
+    shmdt(buffer);
+    return 0;
+}
