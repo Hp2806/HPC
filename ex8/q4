@@ -1,0 +1,41 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#include <omp.h>
+
+int main() {
+    int n, w;
+    printf("Enter the size of the array: ");
+    scanf("%d", &n);
+    printf("Enter the window size: ");
+    scanf("%d", &w);
+    if (w > n) {
+        printf("Error: Window size cannot be greater than array size.\n");
+        return 1;
+    }
+    int *A = (int*) malloc(n * sizeof(int));
+    int num_sums = n - w + 1;
+    int *sums = (int*) malloc(num_sums * sizeof(int));
+    srand(time(NULL));
+    printf("\nGenerated Array: ");
+    for(int i = 0; i < n; i++) {
+        A[i] = rand() % 10;
+        printf("%d ", A[i]);
+    }
+    printf("\n\n");
+    #pragma omp parallel for
+    for (int i = 0; i < num_sums; i++) {
+        int current_window_sum = 0;
+        for (int j = 0; j < w; j++) {
+            current_window_sum += A[i + j];
+        }
+        sums[i] = current_window_sum;
+    }
+    for (int i = 0; i < num_sums; i++) {
+        printf("Window %d : Sum = %d\n", i + 1, sums[i]);
+    }
+    free(A);
+    free(sums);
+
+    return 0;
+}
